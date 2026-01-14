@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SOVEREIGN COMMAND :: CHRONOS v76</title>
+    <style>
+        :root { --neon: #0ff; --magenta: #f0f; --yellow: #ff0; --red: #f00; --bg: #000; --panel: #050505; --border: #111; }
+        body { background: var(--bg); color: var(--neon); font-family: 'Courier New', monospace; margin: 0; overflow: hidden; }
+        
+        #master-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr 350px;
+            grid-template-rows: 60px 1fr 120px;
+            height: 100vh; width: 100vw;
+        }
+
+        /* HEADER & HUD */
+        header { grid-column: 1 / span 3; border-bottom: 1px solid var(--neon); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; background: #000; z-index: 1000; }
+        .logo { font-weight: bold; letter-spacing: 3px; font-size: 18px; }
+        .hud-stat { font-size: 10px; color: #666; }
+        .stat-val { color: var(--neon); font-size: 18px; font-weight: bold; text-shadow: 0 0 5px var(--neon); }
+
+        /* SIDEBARS */
+        aside { background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+        #right-sidebar { border-right: none; border-left: 1px solid var(--border); }
+        .scroll-area { flex-grow: 1; overflow-y: auto; padding: 15px; }
+        .section-label { font-size: 10px; color: #444; letter-spacing: 2px; margin-bottom: 10px; text-transform: uppercase; border-bottom: 1px solid #111; padding-bottom: 5px; }
+
+        /* REACTOR STAGE */
+        #stage { position: relative; background: radial-gradient(circle at center, #111 0%, #000 100%); grid-row: 2; grid-column: 2; }
+        #network-canvas { width: 100%; height: 100%; }
+
+        /* FOOTER / DVR */
+        footer { grid-column: 1 / span 3; border-top: 1px solid var(--border); background: #000; display: flex; flex-direction: column; }
+        #timeline-rail { width: 100%; height: 15px; background: #111; cursor: pointer; position: relative; }
+        #playhead { width: 0%; height: 100%; background: var(--neon); box-shadow: 0 0 10px var(--neon); transition: width 0.1s linear; }
+        #controls { display: flex; align-items: center; justify-content: space-around; padding: 10px 20px; flex-grow: 1; }
+
+        /* UI ELEMENTS */
+        .cmd-btn { background: #000; color: var(--neon); border: 1px solid var(--neon); padding: 6px 15px; cursor: pointer; font-size: 10px; font-weight: bold; transition: 0.2s; }
+        .cmd-btn:hover { background: var(--neon); color: #000; box-shadow: 0 0 10px var(--neon); }
+        .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #111; font-size: 11px; }
+        input[type="range"] { accent-color: var(--neon); }
+        
+        /* INTELLIGENCE FEED */
+        .brief-item { padding: 10px; margin-bottom: 10px; background: rgba(255,255,255,0.02); font-size: 11px; border-left: 3px solid var(--neon); }
+        .priority-high { border-left-color: var(--magenta); color: var(--magenta); background: rgba(255,0,255,0.05); }
+        #unified-logs { height: 150px; background: #000; font-size: 9px; color: #555; overflow-y: auto; padding: 5px; border: 1px solid #111; }
+
+        /* GHOSTS & ALERTS */
+        .keyframe-marker { position: absolute; top: 0; width: 2px; height: 100%; background: #0ff; opacity: 0.4; }
+        
+        /* SCROLLBAR STYLING */
+        .scroll-area::-webkit-scrollbar, #unified-logs::-webkit-scrollbar { width: 6px; }
+        .scroll-area::-webkit-scrollbar-track, #unified-logs::-webkit-scrollbar-track { background: #000; }
+        .scroll-area::-webkit-scrollbar-thumb, #unified-logs::-webkit-scrollbar-thumb { background: #222; }
+        .scroll-area::-webkit-scrollbar-thumb:hover, #unified-logs::-webkit-scrollbar-thumb:hover { background: #333; }
+    </style>
+</head>
+<body>
+
+<div id="master-grid">
+    <header>
+        <div class="logo">WR :: CHRONOS_v76</div>
+        <div class="hud-stat">CORE_TICK: <span id="lbl-tick" class="stat-val">0</span></div>
+        <div class="hud-stat">ACTIVE_HANGAR: <span id="lbl-total" class="stat-val">0</span></div>
+        <button class="cmd-btn" onclick="generateFinalWarReport()">🜂 EXPORT WAR REPORT</button>
+    </header>
+
+    <aside id="left-sidebar">
+        <div class="scroll-area">
+            <div class="section-label">🛰️ Server Control</div>
+            <div class="setting-row"><span>SAS GATEWAY</span> <button class="cmd-btn" onclick="toggleServer('sas', this)">START</button></div>
+            <div class="setting-row"><span>RELAY HUB</span> <button class="cmd-btn" onclick="toggleServer('relay', this)">START</button></div>
+            <div class="setting-row"><span>AUTO-PULSE</span> <button class="cmd-btn" onclick="toggleServer('auto', this)">START</button></div>
+
+            <div class="section-label" style="margin-top:20px;">🔹 Mission Config</div>
+            <textarea id="target-urls" style="width:100%; height:60px; background:#000; color:#0f0; border:1px solid #333; font-size:10px;" placeholder="Target URLs (one per line)"></textarea>
+            <button class="cmd-btn" style="width:100%; margin-top:5px;" onclick="deployHunter()">🚀 DEPLOY HUNTERS</button>
+            
+            <div class="setting-row"><span>Crawl Depth</span> <input type="range" min="1" max="5" value="2" id="cfg-depth"></div>
+            
+            <div class="section-label" style="margin-top:20px;">🧩 Ingest Hangar</div>
+            <div id="hangar-list">
+                <div style="font-size:10px; color:#333; text-align:center; padding:20px;">No Capsules Detected</div>
+            </div>
+        </div>
+    </aside>
+
+    <main id="stage">
+        <div id="network-canvas"></div>
+        <div id="briefing-feed" style="position:absolute; top:20px; right:20px; width:280px; pointer-events:none;"></div>
+    </main>
+
+    <aside id="right-sidebar">
+        <div class="scroll-area">
+            <div class="section-label">📋 Executive Briefing</div>
+            <div id="briefing-container"></div>
+
+            <div class="section-label" style="margin-top:20px;">🔥 Strategic Heatmap</div>
+            <div class="setting-row"><span>Heat Intensity</span> <input type="range" min="0" max="100" value="50" onchange="HEAT_INTENSITY = this.value; updateHeatmap()"></div>
+            <div id="heat-list" style="font-size:10px;"></div>
+
+            <div class="section-label" style="margin-top:20px;">📜 Unified Log Stream</div>
+            <div id="unified-logs"></div>
+        </div>
+    </aside>
+
+    <footer>
+        <div id="timeline-rail" onclick="seekTimeline(event)"><div id="playhead"></div></div>
+        <div id="controls">
+            <button class="cmd-btn" onclick="jumpToTick(0)">|<<</button>
+            <button class="cmd-btn" onclick="togglePlay()" id="btn-play">▶ IGNITE</button>
+            <button class="cmd-btn" onclick="network.fit()">🎥 FIT VIEW</button>
+            <button class="cmd-btn" onclick="location.reload()" style="color:var(--red); border-color:var(--red);">💥 PURGE</button>
+        </div>
+    </footer>
+</div>
+
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<script>
+    // --- 1. CORE STATE ---
+    let allRows = [], currentTick = 0, isPlaying = false, HEAT_INTENSITY = 50;
+    let knownCapsules = new Set(), keyframeStore = new Map();
+    let playInterval = null;
+    let heatmapData = new Map();
+    const SAS_URL = 'http://localhost:3000';
+    const RELAY_WS = 'ws://localhost:4001';
+
+    // --- 2. GRAPH ENGINE ---
+    const nodes = new vis.DataSet([]);
+    const edges = new vis.DataSet([]);
+    const network = new vis.Network(document.getElementById('network-canvas'), { nodes, edges }, {
+        physics: { stabilization: false, barnesHut: { gravitationalConstant: -3000, centralGravity: 0.1 } },
+        nodes: { font: { color: '#0ff', face: 'monospace', size: 12 }, borderWidth: 2, color: { border: '#0ff', background: '#000' } },
+        edges: { width: 1, color: '#111', smooth: { type: 'continuous' } }
+    });
+
+    // --- 3. AUTO-SYNC & INGEST ---
+    async function syncHangar() {
+        try {
+            const res = await fetch(`${SAS_URL}/list`);
+            const files = await res.json();
+            files.forEach(f => {
+                if (!knownCapsules.has(f.name)) {
+                    knownCapsules.add(f.name);
+                    createCapsuleCard(f);
+                    ingestCapsule(f.name);
+                }
+            });
+        } catch(e) {
+            // Silent fail - server may not be running
+        }
+    }
+
+    async function ingestCapsule(filename) {
+        logEntry('SAS', `Auto-Ingesting ${filename}...`);
+        try {
+            const res = await fetch(`${SAS_URL}/hangar/${filename}`);
+            const buf = await res.arrayBuffer();
+            const rows = await parseAura(buf);
+            
+            rows.forEach(r => {
+                renderNode(r);
+                if (r._fx) processForensicSignal(r);
+                updateHeatmapEntry(r);
+            });
+            allRows = allRows.concat(rows);
+            document.getElementById('lbl-total').innerText = allRows.length;
+            updateBriefing();
+            updateHeatmap();
+        } catch(e) {
+            logEntry('ERROR', `Failed to ingest ${filename}: ${e.message}`);
+        }
+    }
+
+    // --- 4. FORENSIC & HEAT LOGIC ---
+    function renderNode(r) {
+        let color = '#0ff', shape = 'dot', size = 15;
+        if (r._fx === 'ghost_new') { color = '#f0f'; shape = 'diamond'; size = 20; }
+        if (r._fx === 'ghost_deleted') { color = 'rgba(255,0,0,0.2)'; shape = 'dot'; }
+        if (r._fx === 'pulse_update') { color = '#ff0'; shape = 'triangle'; }
+        
+        try {
+            nodes.update({ id: r.id, label: r.type || 'node', color: color, shape: shape, size: size, payload: r.payload, _fx: r._fx });
+            if (r.parent) edges.update({ from: r.parent, to: r.id });
+        } catch(e) {
+            // Node may already exist
+        }
+    }
+
+    function processForensicSignal(r) {
+        const icon = r._fx === 'ghost_new' ? '💎' : r._fx === 'ghost_deleted' ? '🔻' : '⚡';
+        const url = r.payload?.url || r.payload?.path || 'unknown';
+        const msg = `${icon} ${r._fx.toUpperCase()}: ${url}`;
+        
+        const brief = document.createElement('div');
+        brief.className = `brief-item ${r._fx === 'ghost_new' ? 'priority-high' : ''}`;
+        brief.innerText = msg;
+        document.getElementById('briefing-container').prepend(brief);
+        
+        // Limit briefing items to 50
+        const container = document.getElementById('briefing-container');
+        while (container.children.length > 50) {
+            container.removeChild(container.lastChild);
+        }
+    }
+
+    function updateHeatmapEntry(r) {
+        const key = r.type || 'unknown';
+        if (!heatmapData.has(key)) {
+            heatmapData.set(key, { count: 0, fx: [] });
+        }
+        const entry = heatmapData.get(key);
+        entry.count++;
+        if (r._fx) entry.fx.push(r._fx);
+    }
+
+    function updateHeatmap() {
+        const heatList = document.getElementById('heat-list');
+        heatList.innerHTML = '';
+        
+        const sorted = Array.from(heatmapData.entries()).sort((a, b) => b[1].count - a[1].count);
+        
+        sorted.forEach(([type, data]) => {
+            const intensity = Math.min(100, (data.count / allRows.length) * 100 * (HEAT_INTENSITY / 50));
+            const color = `rgba(0, 255, 255, ${intensity / 100})`;
+            
+            const item = document.createElement('div');
+            item.style.padding = '5px';
+            item.style.marginBottom = '5px';
+            item.style.background = color;
+            item.style.border = '1px solid #0ff';
+            item.innerHTML = `<strong>${type}</strong>: ${data.count} nodes`;
+            heatList.appendChild(item);
+        });
+    }
+
+    function updateBriefing() {
+        const stats = {
+            total: allRows.length,
+            ghosts: allRows.filter(r => r._fx === 'ghost_new').length,
+            deleted: allRows.filter(r => r._fx === 'ghost_deleted').length,
+            updates: allRows.filter(r => r._fx === 'pulse_update').length
+        };
+        
+        logEntry('BRIEF', `Total: ${stats.total} | Ghosts: ${stats.ghosts} | Deleted: ${stats.deleted} | Updates: ${stats.updates}`);
+    }
+
+    // --- 5. DVR & TIMELINE ---
+    function seekTimeline(e) {
+        const pct = e.offsetX / document.getElementById('timeline-rail').offsetWidth;
+        const target = Math.floor(pct * allRows.length);
+        jumpToTick(target);
+    }
+
+    function jumpToTick(t) {
+        currentTick = Math.max(0, Math.min(t, allRows.length));
+        document.getElementById('playhead').style.width = (currentTick / Math.max(1, allRows.length) * 100) + '%';
+        document.getElementById('lbl-tick').innerText = currentTick;
+    }
+
+    function togglePlay() {
+        isPlaying = !isPlaying;
+        const btn = document.getElementById('btn-play');
+        
+        if (isPlaying) {
+            btn.innerText = '⏸ PAUSE';
+            btn.style.borderColor = 'var(--yellow)';
+            playInterval = setInterval(() => {
+                if (currentTick >= allRows.length) {
+                    currentTick = 0;
+                }
+                jumpToTick(currentTick + 1);
+            }, 100);
+        } else {
+            btn.innerText = '▶ IGNITE';
+            btn.style.borderColor = 'var(--neon)';
+            if (playInterval) {
+                clearInterval(playInterval);
+                playInterval = null;
+            }
+        }
+    }
+
+    // --- 6. WAR REPORT GENERATION ---
+    async function generateFinalWarReport() {
+        logEntry('EXPORT', 'Generating War Report...');
+        
+        const reportHTML = `
+            <div style="font-family: 'Courier New', monospace; padding: 40px; background: #000; color: #0ff;">
+                <h1 style="text-align: center; border-bottom: 2px solid #0ff; padding-bottom: 20px;">
+                    CHRONOS v76 :: WAR REPORT
+                </h1>
+                <p style="text-align: center; color: #666;">Generated: ${new Date().toLocaleString()}</p>
+                
+                <h2 style="color: #f0f; margin-top: 40px;">EXECUTIVE SUMMARY</h2>
+                <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                    <tr style="border-bottom: 1px solid #333;">
+                        <td style="padding: 10px;">Total Nodes Processed</td>
+                        <td style="padding: 10px; text-align: right; color: #0ff;">${allRows.length}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #333;">
+                        <td style="padding: 10px;">Ghost Entities (New)</td>
+                        <td style="padding: 10px; text-align: right; color: #f0f;">${allRows.filter(r => r._fx === 'ghost_new').length}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #333;">
+                        <td style="padding: 10px;">Deleted Entities</td>
+                        <td style="padding: 10px; text-align: right; color: #f00;">${allRows.filter(r => r._fx === 'ghost_deleted').length}</td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #333;">
+                        <td style="padding: 10px;">Pulse Updates</td>
+                        <td style="padding: 10px; text-align: right; color: #ff0;">${allRows.filter(r => r._fx === 'pulse_update').length}</td>
+                    </tr>
+                </table>
+                
+                <h2 style="color: #f0f; margin-top: 40px;">STRATEGIC HEATMAP</h2>
+                <div style="margin: 20px 0;">
+                    ${Array.from(heatmapData.entries()).map(([type, data]) => `
+                        <div style="padding: 10px; margin: 5px 0; background: rgba(0,255,255,0.1); border-left: 3px solid #0ff;">
+                            <strong>${type}</strong>: ${data.count} nodes
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <h2 style="color: #f0f; margin-top: 40px;">FORENSIC TIMELINE</h2>
+                <div style="margin: 20px 0; font-size: 10px;">
+                    ${allRows.filter(r => r._fx).slice(0, 50).map(r => `
+                        <div style="padding: 5px; margin: 2px 0; border-left: 2px solid ${r._fx === 'ghost_new' ? '#f0f' : '#0ff'};">
+                            ${r._fx}: ${r.payload?.url || r.payload?.path || 'N/A'}
+                        </div>
+                    `).join('')}
+                </div>
+                
+                <div style="margin-top: 60px; text-align: center; color: #333; font-size: 10px;">
+                    CHRONOS v76 :: SOVEREIGN COMMAND INTERFACE
+                </div>
+            </div>
+        `;
+        
+        const opt = {
+            margin: 10,
+            filename: `chronos_war_report_${Date.now()}.pdf`,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: { scale: 2, backgroundColor: '#000' },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+        
+        try {
+            await html2pdf().set(opt).from(reportHTML).save();
+            logEntry('EXPORT', 'War Report generated successfully');
+        } catch(e) {
+            logEntry('ERROR', `Failed to generate report: ${e.message}`);
+        }
+    }
+
+    // --- 7. UTILS & UI ---
+    async function parseAura(ab) {
+        try {
+            const delim = new TextEncoder().encode('RABBIT_HOLE::');
+            const buf = new Uint8Array(ab);
+            let idx = [];
+            for(let i=0; i<buf.length-delim.length; i++) {
+                if(delim.every((b,j) => buf[i+j]===b)) idx.push(i);
+            }
+            
+            if (idx.length < 3) {
+                throw new Error('Invalid AURA format');
+            }
+            
+            const slice = buf.slice(idx[1]+delim.length, idx[2]);
+            const dec = pako.inflate(slice, {to:'string'});
+            return dec.split('\n').filter(Boolean).map(JSON.parse);
+        } catch(e) {
+            logEntry('ERROR', `Parse failed: ${e.message}`);
+            return [];
+        }
+    }
+
+    function logEntry(source, msg) {
+        const logs = document.getElementById('unified-logs');
+        const entry = document.createElement('div');
+        entry.innerText = `[${new Date().toLocaleTimeString()}] [${source}] ${msg}`;
+        logs.prepend(entry);
+        
+        // Limit log entries to 100
+        while (logs.children.length > 100) {
+            logs.removeChild(logs.lastChild);
+        }
+    }
+
+    function createCapsuleCard(f) {
+        const hangar = document.getElementById('hangar-list');
+        if (hangar.innerText.includes("No Capsules")) hangar.innerHTML = "";
+        const card = document.createElement('div');
+        card.className = "setting-row";
+        card.style.border = "1px solid #222";
+        card.style.padding = "5px";
+        card.innerHTML = `<span>${f.name.substring(0,12)}...</span> <span style="color:#555;">${Math.round(f.size/1024)}KB</span>`;
+        hangar.prepend(card);
+    }
+
+    // --- 8. EXTERNAL API BRIDGES ---
+    async function toggleServer(svc, btn) {
+        const action = btn.innerText === 'START' ? 'start' : 'stop';
+        logEntry('SYS', `Requesting ${action} on ${svc}...`);
+        
+        try {
+            const res = await fetch(`${SAS_URL}/control/${svc}/${action}`, { method: 'POST' });
+            if (res.ok) {
+                btn.innerText = action === 'start' ? 'STOP' : 'START';
+                btn.style.borderColor = action === 'start' ? 'var(--red)' : 'var(--neon)';
+                logEntry('SYS', `${svc} ${action} successful`);
+            } else {
+                logEntry('ERROR', `${svc} ${action} failed`);
+            }
+        } catch(e) {
+            logEntry('ERROR', `Cannot reach server: ${e.message}`);
+        }
+    }
+
+    async function deployHunter() {
+        const urls = document.getElementById('target-urls').value.split('\n').filter(Boolean);
+        const depth = document.getElementById('cfg-depth').value;
+        
+        if (urls.length === 0) {
+            logEntry('ERROR', 'No target URLs provided');
+            return;
+        }
+        
+        logEntry('AUTO', `Launching mission for ${urls.length} targets at depth ${depth}...`);
+        
+        try {
+            const res = await fetch(`${SAS_URL}/submit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls, depth: parseInt(depth) })
+            });
+            
+            if (res.ok) {
+                logEntry('AUTO', 'Mission deployed successfully');
+            } else {
+                logEntry('ERROR', 'Mission deployment failed');
+            }
+        } catch(e) {
+            logEntry('ERROR', `Cannot reach server: ${e.message}`);
+        }
+    }
+
+    // --- 9. DEMO MODE (for standalone testing) ---
+    function initDemoMode() {
+        logEntry('DEMO', 'Initializing demo mode with synthetic data...');
+        
+        // Generate synthetic nodes for demonstration
+        const demoNodes = [
+            { id: 'root', type: 'origin', payload: { url: 'https://example.com' }, _fx: null, parent: null },
+            { id: 'n1', type: 'page', payload: { url: 'https://example.com/about' }, _fx: 'ghost_new', parent: 'root' },
+            { id: 'n2', type: 'page', payload: { url: 'https://example.com/contact' }, _fx: null, parent: 'root' },
+            { id: 'n3', type: 'asset', payload: { url: 'https://example.com/style.css' }, _fx: 'pulse_update', parent: 'n1' },
+            { id: 'n4', type: 'page', payload: { url: 'https://example.com/blog' }, _fx: 'ghost_new', parent: 'root' },
+            { id: 'n5', type: 'page', payload: { url: 'https://example.com/products' }, _fx: null, parent: 'root' },
+            { id: 'n6', type: 'asset', payload: { url: 'https://example.com/logo.png' }, _fx: null, parent: 'n2' },
+            { id: 'n7', type: 'page', payload: { url: 'https://example.com/deleted' }, _fx: 'ghost_deleted', parent: 'root' }
+        ];
+        
+        demoNodes.forEach(node => {
+            allRows.push(node);
+            renderNode(node);
+            if (node._fx) processForensicSignal(node);
+            updateHeatmapEntry(node);
+        });
+        
+        document.getElementById('lbl-total').innerText = allRows.length;
+        updateBriefing();
+        updateHeatmap();
+        network.fit();
+        
+        logEntry('DEMO', `Loaded ${demoNodes.length} synthetic nodes`);
+    }
+
+    // --- INITIALIZE ---
+    logEntry('SYS', 'Sovereign God-View Online. Ready for Ingest.');
+    
+    // Try to connect to backend, fallback to demo mode
+    fetch(`${SAS_URL}/list`)
+        .then(() => {
+            logEntry('SYS', 'Backend detected. Starting auto-sync...');
+            setInterval(syncHangar, 5000);
+        })
+        .catch(() => {
+            logEntry('SYS', 'Backend not detected. Entering demo mode...');
+            setTimeout(initDemoMode, 1000);
+        });
+
+    // Network interaction handlers
+    network.on('click', function(params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const node = nodes.get(nodeId);
+            if (node && node.payload) {
+                logEntry('INTERACT', `Selected: ${node.label} - ${JSON.stringify(node.payload)}`);
+            }
+        }
+    });
+
+</script>
+</body>
+</html>
