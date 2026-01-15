@@ -105,7 +105,7 @@ A real-time visualization cockpit for the CHRONOS v77 Sovereign Trust network, f
 
 The visualizer attempts to connect to a WebSocket server at `ws://localhost:8080` by default.
 
-To change the WebSocket URL, modify line 665 in `chronos_v77.html`:
+To change the WebSocket URL, modify line 854 in `chronos_v77.html`:
 ```javascript
 connectWebSocket('ws://your-server:port');
 ```
@@ -234,14 +234,14 @@ Modify the CSS color scheme in the `<style>` section:
 
 ### Node Appearance
 
-Adjust node size in the `renderNode` function (line 260):
+Adjust node size in the `renderNode` function (line 396):
 ```javascript
 size: 30,  // Change to desired pixel size
 ```
 
 ### Force Parameters
 
-Tune the layout algorithm (lines 243-250):
+Tune the layout algorithm (lines 376-378):
 ```javascript
 repulsionStrength: 100,    // Higher = more spread
 attractionStrength: 0.01,  // Higher = tighter clustering
@@ -250,7 +250,7 @@ damping: 0.9               // Lower = more bouncy movement
 
 ### Event Generation Rate
 
-Modify demo mode interval (line 828):
+Modify demo mode interval (line 869):
 ```javascript
 setInterval(() => {
   // Event generation code
