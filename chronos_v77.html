@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHRONOS v77 - Sovereign Trust Visualizer Cockpit</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #0a0e27;
+            color: #00ff41;
+            overflow: hidden;
+        }
+
+        #cockpit-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        #visualization-canvas {
+            width: 100%;
+            height: calc(100% - 200px);
+            background: radial-gradient(circle at center, #0f1729 0%, #050812 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #controls-panel {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(to bottom, rgba(10, 14, 39, 0.95), rgba(10, 14, 39, 1));
+            border-top: 2px solid #00ff41;
+            padding: 20px;
+        }
+
+        .status-display {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 15px;
+        }
+
+        .status-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .status-label {
+            font-size: 10px;
+            opacity: 0.6;
+            text-transform: uppercase;
+        }
+
+        .status-value {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        #timeline-scrubber {
+            margin-top: 15px;
+            position: relative;
+        }
+
+        #timeline-track {
+            width: 100%;
+            height: 40px;
+            background: rgba(0, 255, 65, 0.1);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            position: relative;
+            cursor: pointer;
+        }
+
+        #timeline-progress {
+            height: 100%;
+            background: linear-gradient(to right, rgba(0, 255, 65, 0.3), rgba(0, 255, 65, 0.5));
+            width: 0%;
+            transition: width 0.1s linear;
+        }
+
+        #timeline-handle {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background: #00ff41;
+            border: 2px solid #0a0e27;
+            border-radius: 50%;
+            cursor: grab;
+            left: 0%;
+        }
+
+        #timeline-handle:active {
+            cursor: grabbing;
+        }
+
+        .timeline-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .control-btn {
+            padding: 8px 16px;
+            background: rgba(0, 255, 65, 0.2);
+            border: 1px solid #00ff41;
+            color: #00ff41;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 12px;
+            border-radius: 3px;
+            transition: all 0.2s;
+        }
+
+        .control-btn:hover {
+            background: rgba(0, 255, 65, 0.4);
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+        }
+
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+
+        .node {
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid #00ff41;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        .node.hot {
+            animation: pulse 1s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+            }
+            50% {
+                transform: scale(1.5);
+                box-shadow: 0 0 30px rgba(255, 100, 0, 0.8);
+            }
+        }
+
+        .arc {
+            position: absolute;
+            pointer-events: none;
+            stroke: #00ff41;
+            stroke-width: 2;
+            fill: none;
+            opacity: 0.6;
+        }
+
+        .arc.weighted {
+            stroke-width: 4;
+            opacity: 0.9;
+        }
+
+        .arc.bottleneck {
+            stroke: #ff4400;
+            stroke-width: 6;
+            opacity: 1;
+            animation: bottleneck-alert 0.5s infinite alternate;
+        }
+
+        @keyframes bottleneck-alert {
+            from {
+                opacity: 0.8;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        #connection-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background: rgba(10, 14, 39, 0.9);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .status-connected {
+            color: #00ff41;
+        }
+
+        .status-disconnected {
+            color: #ff4400;
+        }
+
+        #metrics-overlay {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(10, 14, 39, 0.9);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 15px;
+            min-width: 200px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+
+        .metric-label {
+            opacity: 0.7;
+        }
+
+        .metric-value {
+            font-weight: bold;
+        }
+
+        #event-log {
+            position: absolute;
+            bottom: 220px;
+            right: 20px;
+            width: 300px;
+            max-height: 200px;
+            background: rgba(10, 14, 39, 0.9);
+            border: 1px solid #00ff41;
+            border-radius: 5px;
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            font-size: 10px;
+            margin: 3px 0;
+            padding: 3px;
+            border-left: 2px solid #00ff41;
+            padding-left: 8px;
+        }
+
+        .log-entry.capsule {
+            border-left-color: #00ff41;
+        }
+
+        .log-entry.like {
+            border-left-color: #ffaa00;
+        }
+
+        .log-entry.bottleneck {
+            border-left-color: #ff4400;
+        }
+    </style>
+</head>
+<body>
+    <div id="cockpit-container">
+        <div id="visualization-canvas">
+            <svg id="arc-layer" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+            </svg>
+            <div id="node-layer"></div>
+        </div>
+
+        <div id="connection-status" class="status-disconnected">
+            ⚠ Disconnected
+        </div>
+
+        <div id="metrics-overlay">
+            <div class="metric-row">
+                <span class="metric-label">Total Nodes:</span>
+                <span class="metric-value" id="metric-nodes">0</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Active Arcs:</span>
+                <span class="metric-value" id="metric-arcs">0</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Capsules Processed:</span>
+                <span class="metric-value" id="metric-capsules">0</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">LIKE Events:</span>
+                <span class="metric-value" id="metric-likes">0</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Bottlenecks:</span>
+                <span class="metric-value" id="metric-bottlenecks">0</span>
+            </div>
+        </div>
+
+        <div id="event-log">
+            <div class="log-entry">CHRONOS v77 initialized...</div>
+        </div>
+
+        <div id="controls-panel">
+            <div class="status-display">
+                <div class="status-item">
+                    <span class="status-label">System Mode</span>
+                    <span class="status-value" id="system-mode">LIVE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Timeline Position</span>
+                    <span class="status-value" id="timeline-pos">T+0s</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Replay Speed</span>
+                    <span class="status-value" id="replay-speed">1.0x</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Heat Level</span>
+                    <span class="status-value" id="heat-level">0%</span>
+                </div>
+            </div>
+
+            <div id="timeline-scrubber">
+                <div id="timeline-track">
+                    <div id="timeline-progress"></div>
+                    <div id="timeline-handle"></div>
+                </div>
+            </div>
+
+            <div class="timeline-controls">
+                <button class="control-btn" id="btn-reset">Reset Heatmap</button>
+                <button class="control-btn" id="btn-replay">Start Replay</button>
+                <button class="control-btn" id="btn-pause">Pause</button>
+                <button class="control-btn" id="btn-live">Go Live</button>
+                <button class="control-btn" id="btn-speed-up">Speed 2x</button>
+                <button class="control-btn" id="btn-speed-down">Speed 0.5x</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // CHRONOS v77 Core State
+        const state = {
+            nodes: new Map(),
+            arcs: new Map(),
+            history: [],
+            isLive: true,
+            isReplaying: false,
+            replaySpeed: 1.0,
+            replayIndex: 0,
+            timelineStart: Date.now(),
+            wsConnection: null,
+            metrics: {
+                totalNodes: 0,
+                activeArcs: 0,
+                capsulesProcessed: 0,
+                likeEvents: 0,
+                bottlenecks: 0
+            }
+        };
+
+        // Force-like layout parameters
+        const layout = {
+            width: window.innerWidth,
+            height: window.innerHeight - 200,
+            centerX: window.innerWidth / 2,
+            centerY: (window.innerHeight - 200) / 2,
+            repulsionStrength: 100,
+            attractionStrength: 0.01,
+            damping: 0.9
+        };
+
+        // ===== DYNAMIC NODE PLACEMENT =====
+        function renderNode(nodeId, data = {}) {
+            let node = state.nodes.get(nodeId);
+            
+            if (!node) {
+                // Create new node with force-based initial position
+                const angle = Math.random() * 2 * Math.PI;
+                const radius = Math.random() * Math.min(layout.width, layout.height) * 0.3;
+                
+                node = {
+                    id: nodeId,
+                    x: layout.centerX + Math.cos(angle) * radius,
+                    y: layout.centerY + Math.sin(angle) * radius,
+                    vx: 0,
+                    vy: 0,
+                    size: 30,
+                    heat: 0,
+                    weight: data.weight || 1,
+                    element: null
+                };
+                
+                state.nodes.set(nodeId, node);
+                state.metrics.totalNodes++;
+            }
+
+            // Apply force-directed layout adjustments
+            applyForces(node);
+
+            // Update or create DOM element
+            if (!node.element) {
+                const element = document.createElement('div');
+                element.className = 'node';
+                element.textContent = nodeId;
+                element.style.width = node.size + 'px';
+                element.style.height = node.size + 'px';
+                element.onclick = () => onNodeClick(nodeId);
+                document.getElementById('node-layer').appendChild(element);
+                node.element = element;
+            }
+
+            // Update visual properties
+            const heatColor = node.heat > 0 ? 
+                `rgba(255, ${Math.max(0, 200 - node.heat * 2)}, 0, ${0.3 + node.heat / 200})` :
+                'rgba(10, 14, 39, 0.8)';
+            
+            node.element.style.left = (node.x - node.size / 2) + 'px';
+            node.element.style.top = (node.y - node.size / 2) + 'px';
+            node.element.style.background = heatColor;
+            node.element.style.borderColor = node.heat > 50 ? '#ff4400' : '#00ff41';
+            node.element.style.transform = `scale(${1 + node.heat / 200})`;
+
+            return node;
+        }
+
+        function applyForces(node) {
+            let fx = 0, fy = 0;
+
+            // Repulsion from other nodes
+            state.nodes.forEach((other) => {
+                if (other.id === node.id) return;
+                
+                const dx = node.x - other.x;
+                const dy = node.y - other.y;
+                const distance = Math.sqrt(dx * dx + dy * dy) || 1;
+                
+                if (distance < 150) {
+                    const force = layout.repulsionStrength / (distance * distance);
+                    fx += (dx / distance) * force;
+                    fy += (dy / distance) * force;
+                }
+            });
+
+            // Attraction to center (weak)
+            const dx = layout.centerX - node.x;
+            const dy = layout.centerY - node.y;
+            fx += dx * layout.attractionStrength;
+            fy += dy * layout.attractionStrength;
+
+            // Apply forces to velocity
+            node.vx = (node.vx + fx) * layout.damping;
+            node.vy = (node.vy + fy) * layout.damping;
+
+            // Update position
+            node.x += node.vx;
+            node.y += node.vy;
+
+            // Boundary constraints
+            const margin = node.size;
+            node.x = Math.max(margin, Math.min(layout.width - margin, node.x));
+            node.y = Math.max(margin, Math.min(layout.height - margin, node.y));
+        }
+
+        // ===== RESET HEATMAP =====
+        function resetHeatmap() {
+            logEvent('Resetting heatmap...', 'system');
+            
+            state.nodes.forEach(node => {
+                node.heat = 0;
+                if (node.element) {
+                    node.element.classList.remove('hot');
+                    node.element.style.background = 'rgba(10, 14, 39, 0.8)';
+                    node.element.style.borderColor = '#00ff41';
+                    node.element.style.transform = 'scale(1)';
+                }
+            });
+
+            // Reset arc colors
+            document.querySelectorAll('.arc').forEach(arc => {
+                arc.classList.remove('bottleneck');
+                arc.style.stroke = '#00ff41';
+            });
+
+            state.metrics.bottlenecks = 0;
+            updateMetrics();
+            updateHeatLevel();
+        }
+
+        // ===== HEAT PULSE ANIMATION =====
+        function triggerHeatPulse(nodeId, intensity = 1) {
+            const node = state.nodes.get(nodeId);
+            if (!node) return;
+
+            // Increase heat proportional to intensity
+            node.heat = Math.min(100, node.heat + intensity * 20);
+
+            // Add hot class for pulse animation
+            if (node.element) {
+                node.element.classList.add('hot');
+                setTimeout(() => {
+                    if (node.element) {
+                        node.element.classList.remove('hot');
+                    }
+                }, 1000);
+            }
+
+            // Gradual heat decay
+            setTimeout(() => {
+                if (node.heat > 0) {
+                    node.heat = Math.max(0, node.heat - 10);
+                    renderNode(nodeId);
+                }
+            }, 2000);
+
+            // Re-render with updated heat
+            renderNode(nodeId);
+            updateHeatLevel();
+        }
+
+        // ===== ARC RENDERING =====
+        function renderArc(fromId, toId, weight = 1, isBottleneck = false) {
+            const fromNode = state.nodes.get(fromId);
+            const toNode = state.nodes.get(toId);
+            
+            if (!fromNode || !toNode) return;
+
+            const arcId = `${fromId}-${toId}`;
+            const svg = document.getElementById('arc-layer');
+            
+            let arcPath = document.getElementById(`arc-${arcId}`);
+            if (!arcPath) {
+                arcPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                arcPath.id = `arc-${arcId}`;
+                arcPath.classList.add('arc');
+                svg.appendChild(arcPath);
+                state.metrics.activeArcs++;
+            }
+
+            // Calculate curved path
+            const dx = toNode.x - fromNode.x;
+            const dy = toNode.y - fromNode.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const curve = distance * 0.2;
+
+            const midX = (fromNode.x + toNode.x) / 2;
+            const midY = (fromNode.y + toNode.y) / 2;
+            const perpX = -dy / distance;
+            const perpY = dx / distance;
+
+            const controlX = midX + perpX * curve;
+            const controlY = midY + perpY * curve;
+
+            const d = `M ${fromNode.x} ${fromNode.y} Q ${controlX} ${controlY} ${toNode.x} ${toNode.y}`;
+            arcPath.setAttribute('d', d);
+
+            // Apply weight and bottleneck styling
+            if (weight > 2) {
+                arcPath.classList.add('weighted');
+            }
+            
+            if (isBottleneck) {
+                arcPath.classList.add('bottleneck');
+                state.metrics.bottlenecks++;
+            } else {
+                arcPath.classList.remove('bottleneck');
+            }
+
+            state.arcs.set(arcId, { fromId, toId, weight, isBottleneck });
+        }
+
+        // ===== WEBSOCKET CONNECTION =====
+        function connectWebSocket(url = 'ws://localhost:8080') {
+            logEvent(`Connecting to WebSocket: ${url}`, 'system');
+
+            try {
+                state.wsConnection = new WebSocket(url);
+
+                state.wsConnection.onopen = () => {
+                    logEvent('WebSocket connected', 'system');
+                    document.getElementById('connection-status').textContent = '✓ Connected';
+                    document.getElementById('connection-status').className = 'status-connected';
+                };
+
+                state.wsConnection.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleWebSocketMessage(message);
+                    } catch (e) {
+                        console.error('Failed to parse WebSocket message:', e);
+                    }
+                };
+
+                state.wsConnection.onerror = (error) => {
+                    logEvent('WebSocket error', 'system');
+                    console.error('WebSocket error:', error);
+                };
+
+                state.wsConnection.onclose = () => {
+                    logEvent('WebSocket disconnected', 'system');
+                    document.getElementById('connection-status').textContent = '⚠ Disconnected';
+                    document.getElementById('connection-status').className = 'status-disconnected';
+                    
+                    // Attempt reconnection after 5 seconds
+                    setTimeout(() => connectWebSocket(url), 5000);
+                };
+            } catch (e) {
+                logEvent('Failed to create WebSocket connection', 'system');
+                console.error('WebSocket connection failed:', e);
+            }
+        }
+
+        function handleWebSocketMessage(message) {
+            const timestamp = Date.now();
+            state.history.push({ ...message, timestamp });
+
+            switch (message.type) {
+                case 'capsule':
+                    handleCapsule(message);
+                    break;
+                case 'like':
+                    handleLike(message);
+                    break;
+                case 'bottleneck':
+                    handleBottleneck(message);
+                    break;
+                default:
+                    console.log('Unknown message type:', message.type);
+            }
+
+            updateMetrics();
+        }
+
+        function handleCapsule(message) {
+            const { from, to, weight } = message;
+            
+            renderNode(from);
+            renderNode(to);
+            renderArc(from, to, weight || 1, false);
+            
+            state.metrics.capsulesProcessed++;
+            logEvent(`Capsule: ${from} → ${to} (weight: ${weight || 1})`, 'capsule');
+        }
+
+        function handleLike(message) {
+            const { nodeId, intensity } = message;
+            
+            renderNode(nodeId);
+            triggerHeatPulse(nodeId, intensity || 1);
+            
+            state.metrics.likeEvents++;
+            logEvent(`LIKE event on ${nodeId} (intensity: ${intensity || 1})`, 'like');
+        }
+
+        function handleBottleneck(message) {
+            const { from, to } = message;
+            
+            renderNode(from);
+            renderNode(to);
+            renderArc(from, to, 5, true);
+            
+            logEvent(`Bottleneck detected: ${from} → ${to}`, 'bottleneck');
+        }
+
+        // ===== TIMELINE & REPLAY =====
+        function startReplay() {
+            if (state.history.length === 0) {
+                logEvent('No history to replay', 'system');
+                return;
+            }
+
+            state.isReplaying = true;
+            state.isLive = false;
+            state.replayIndex = 0;
+            document.getElementById('system-mode').textContent = 'REPLAY';
+            
+            resetHeatmap();
+            logEvent('Starting replay...', 'system');
+            
+            replayNextEvent();
+        }
+
+        function replayNextEvent() {
+            if (!state.isReplaying || state.replayIndex >= state.history.length) {
+                stopReplay();
+                return;
+            }
+
+            const event = state.history[state.replayIndex];
+            handleWebSocketMessage(event);
+            
+            const progress = (state.replayIndex / state.history.length) * 100;
+            document.getElementById('timeline-progress').style.width = progress + '%';
+            document.getElementById('timeline-handle').style.left = progress + '%';
+            
+            const elapsedTime = ((state.replayIndex / state.history.length) * 
+                (state.history[state.history.length - 1].timestamp - state.history[0].timestamp)) / 1000;
+            document.getElementById('timeline-pos').textContent = `T+${elapsedTime.toFixed(1)}s`;
+            
+            state.replayIndex++;
+            
+            setTimeout(replayNextEvent, 100 / state.replaySpeed);
+        }
+
+        function stopReplay() {
+            state.isReplaying = false;
+            logEvent('Replay stopped', 'system');
+        }
+
+        function goLive() {
+            state.isLive = true;
+            state.isReplaying = false;
+            document.getElementById('system-mode').textContent = 'LIVE';
+            document.getElementById('timeline-progress').style.width = '100%';
+            document.getElementById('timeline-handle').style.left = '100%';
+            logEvent('Switched to live mode', 'system');
+        }
+
+        function setReplaySpeed(speed) {
+            state.replaySpeed = speed;
+            document.getElementById('replay-speed').textContent = speed.toFixed(1) + 'x';
+        }
+
+        // ===== UI UPDATES =====
+        function updateMetrics() {
+            document.getElementById('metric-nodes').textContent = state.metrics.totalNodes;
+            document.getElementById('metric-arcs').textContent = state.metrics.activeArcs;
+            document.getElementById('metric-capsules').textContent = state.metrics.capsulesProcessed;
+            document.getElementById('metric-likes').textContent = state.metrics.likeEvents;
+            document.getElementById('metric-bottlenecks').textContent = state.metrics.bottlenecks;
+        }
+
+        function updateHeatLevel() {
+            let totalHeat = 0;
+            let nodeCount = 0;
+            
+            state.nodes.forEach(node => {
+                totalHeat += node.heat;
+                nodeCount++;
+            });
+            
+            const avgHeat = nodeCount > 0 ? (totalHeat / nodeCount) : 0;
+            document.getElementById('heat-level').textContent = avgHeat.toFixed(0) + '%';
+        }
+
+        function logEvent(message, type = 'system') {
+            const logContainer = document.getElementById('event-log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logContainer.insertBefore(entry, logContainer.firstChild);
+            
+            // Keep only last 50 entries
+            while (logContainer.children.length > 50) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+
+        function onNodeClick(nodeId) {
+            logEvent(`Node clicked: ${nodeId}`, 'system');
+            triggerHeatPulse(nodeId, 2);
+        }
+
+        // ===== ANIMATION LOOP =====
+        function animate() {
+            // Continuously update node positions with force-directed layout
+            state.nodes.forEach(node => {
+                renderNode(node.id);
+            });
+            
+            // Update all arcs to match node positions
+            state.arcs.forEach((arc, arcId) => {
+                renderArc(arc.fromId, arc.toId, arc.weight, arc.isBottleneck);
+            });
+            
+            requestAnimationFrame(animate);
+        }
+
+        // ===== EVENT LISTENERS =====
+        document.getElementById('btn-reset').addEventListener('click', resetHeatmap);
+        document.getElementById('btn-replay').addEventListener('click', startReplay);
+        document.getElementById('btn-pause').addEventListener('click', stopReplay);
+        document.getElementById('btn-live').addEventListener('click', goLive);
+        document.getElementById('btn-speed-up').addEventListener('click', () => setReplaySpeed(Math.min(5, state.replaySpeed * 2)));
+        document.getElementById('btn-speed-down').addEventListener('click', () => setReplaySpeed(Math.max(0.25, state.replaySpeed / 2)));
+
+        // Timeline scrubber interaction
+        const timelineTrack = document.getElementById('timeline-track');
+        const timelineHandle = document.getElementById('timeline-handle');
+        let isDragging = false;
+
+        timelineHandle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const rect = timelineTrack.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            
+            document.getElementById('timeline-progress').style.width = percent + '%';
+            document.getElementById('timeline-handle').style.left = percent + '%';
+            
+            if (state.history.length > 0) {
+                state.replayIndex = Math.floor((percent / 100) * state.history.length);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        timelineTrack.addEventListener('click', (e) => {
+            const rect = timelineTrack.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
+            
+            document.getElementById('timeline-progress').style.width = percent + '%';
+            document.getElementById('timeline-handle').style.left = percent + '%';
+            
+            if (state.history.length > 0) {
+                state.replayIndex = Math.floor((percent / 100) * state.history.length);
+            }
+        });
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            layout.width = window.innerWidth;
+            layout.height = window.innerHeight - 200;
+            layout.centerX = layout.width / 2;
+            layout.centerY = layout.height / 2;
+        });
+
+        // ===== INITIALIZATION =====
+        function init() {
+            logEvent('CHRONOS v77 Sovereign Trust Visualizer initialized', 'system');
+            
+            // Start animation loop
+            animate();
+            
+            // Attempt WebSocket connection
+            // Change URL to your WebSocket server endpoint
+            connectWebSocket('ws://localhost:8080');
+            
+            // Demo mode: Generate sample data if no WebSocket connection
+            setTimeout(() => {
+                if (!state.wsConnection || state.wsConnection.readyState !== WebSocket.OPEN) {
+                    logEvent('Starting demo mode with simulated data...', 'system');
+                    startDemoMode();
+                }
+            }, 3000);
+        }
+
+        // ===== DEMO MODE =====
+        function startDemoMode() {
+            const nodeIds = ['ALPHA', 'BETA', 'GAMMA', 'DELTA', 'EPSILON', 'ZETA', 'ETA', 'THETA'];
+            
+            setInterval(() => {
+                // Random capsule
+                const from = nodeIds[Math.floor(Math.random() * nodeIds.length)];
+                const to = nodeIds[Math.floor(Math.random() * nodeIds.length)];
+                
+                if (from !== to) {
+                    handleWebSocketMessage({
+                        type: 'capsule',
+                        from,
+                        to,
+                        weight: Math.floor(Math.random() * 5) + 1
+                    });
+                }
+                
+                // Random LIKE event
+                if (Math.random() > 0.7) {
+                    const nodeId = nodeIds[Math.floor(Math.random() * nodeIds.length)];
+                    handleWebSocketMessage({
+                        type: 'like',
+                        nodeId,
+                        intensity: Math.random() * 3 + 1
+                    });
+                }
+                
+                // Occasional bottleneck
+                if (Math.random() > 0.95) {
+                    const from = nodeIds[Math.floor(Math.random() * nodeIds.length)];
+                    const to = nodeIds[Math.floor(Math.random() * nodeIds.length)];
+                    
+                    if (from !== to) {
+                        handleWebSocketMessage({
+                            type: 'bottleneck',
+                            from,
+                            to
+                        });
+                    }
+                }
+            }, 1000);
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>
